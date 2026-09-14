@@ -46,6 +46,19 @@ body {
   backdrop-filter: blur(12px);
 
   z-index: 10;
+  height: 100vh;
+
+  overflow-y: auto;
+
+  overflow-x: hidden;
+
+  scrollbar-width: none;
+}
+
+.panel::-webkit-scrollbar {
+
+  display: none;
+
 }
 
 .brand h1 {
@@ -131,7 +144,10 @@ input[type="range"] {
 }
 
 .footer {
-  position: absolute;
+
+  margin-top: 48px;
+
+  padding-bottom: 32px;
 
   bottom: 30px;
 
@@ -211,4 +227,58 @@ input[type="range"] {
 .generateButton:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.worldSection {
+  margin: 24px 0;
+}
+
+.worldGroup {
+  margin-top: 18px;
+}
+
+.worldLabel {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  opacity: 0.45;
+  margin-bottom: 7px;
+}
+
+.worldWords {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  line-height: 1.8;
+  opacity: 0.9;
+}
+
+.statementGroup {
+  margin-top: 24px;
+}
+
+.worldStatement {
+  margin: 0;
+  max-width: 290px;
+
+  font-size: 11px;
+  line-height: 1.8;
+  letter-spacing: 0.04em;
+
+  opacity: 0.72;
+}
+
+.generatedTitle {
+  margin-top: 18px;
+  margin-bottom: 26px;
+
+  font-size: 18px;
+  font-weight: 300;
+
+  line-height: 1.4;
+  letter-spacing: 0.14em;
+
+  text-transform: uppercase;
+
+  opacity: 0.95;
 }
