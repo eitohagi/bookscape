@@ -1,19 +1,75 @@
 "use client";
 
-import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import {
+  useMemo,
+  useRef,
+} from "react";
+
+import {
+  useFrame,
+} from "@react-three/fiber";
+
 import * as THREE from "three";
 
-import type { World3DProps } from "./types";
+import type {
+  World3DProps,
+} from "./types";
+
 import {
   getOrganismStrength,
   getWaveStrength,
   getCrystalStrength,
 } from "./strengths";
-import { createSeededRandom } from "./random";
+
+import {
+  createSeededRandom,
+} from "./random";
+
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function clamp01(
+  value: number
+) {
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      value
+    )
+  );
+}
+
+
+function smoothstep(
+  edge0: number,
+  edge1: number,
+  x: number
+) {
+  const t =
+    clamp01(
+      (x - edge0) /
+        (edge1 - edge0)
+    );
+
+  return (
+    t *
+    t *
+    (3 - 2 * t)
+  );
+}
+
+
+// ============================================================
+// GALAXY WORLD
+// ============================================================
 
 export default function GalaxyWorld({
   mix = 1,
+
+  quietness = 0.6,
   fantasy = 0.6,
   spaciousness = 0.6,
   speed = 0.4,
@@ -25,536 +81,1960 @@ export default function GalaxyWorld({
   nature = 0.5,
   fluidity = 0.5,
   tension = 0.5,
+
 }: World3DProps) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const pointsRef = useRef<THREE.Points>(null);
 
-  const organismStrength = getOrganismStrength(
-    nature,
-    fluidity,
-    fantasy
-  );
+  // ==========================================================
+  // REFS
+  // ==========================================================
 
-  const waveStrength = getWaveStrength(
-    fluidity,
-    speed,
-    fantasy
-  );
+  const rootRef =
+    useRef<THREE.Group>(
+      null
+    );
 
-  const crystalStrength = getCrystalStrength(
-    tension,
-    fantasy,
-    chaos
-  );
 
-  const galaxyStrength = Math.max(
-    0,
-    1 -
-      organismStrength * 0.25 -
-      waveStrength * 0.18 -
-      crystalStrength * 0.18
-  )*mix;
+  const materialRef =
+    useRef<THREE.ShaderMaterial>(
+      null
+    );
 
-  // =========================================================
-  // BASE GEOMETRY
-  // =========================================================
 
-  const geometryData = useMemo(() => {
-    const random = createSeededRandom(12457);
+  const spiralRef =
+    useRef<THREE.Points>(
+      null
+    );
 
-    const count = 9000;
 
-    const positions = new Float32Array(count * 3);
-    const randoms = new Float32Array(count);
-    const sizes = new Float32Array(count);
+  const deepStarsRef =
+    useRef<THREE.Points>(
+      null
+    );
 
-    for (let i = 0; i < count; i++) {
-      const i3 = i * 3;
 
-      const arm = i % 5;
+  const foregroundStarsRef =
+    useRef<THREE.Points>(
+      null
+    );
 
-      const armAngle =
-        (arm / 5) *
-        Math.PI *
-        2;
 
-      const normalizedRadius = Math.pow(
-        random(),
-        0.72
-      );
+  const orbitalGroupRef =
+    useRef<THREE.Group>(
+      null
+    );
 
-      const radius =
-        normalizedRadius *
-        12;
 
-      const spiral =
-        radius * 0.75;
+  const singularityRef =
+    useRef<THREE.Group>(
+      null
+    );
 
-      const jitter =
-        (random() - 0.5) *
-        1.2;
 
-      const angle =
-        armAngle +
-        spiral +
-        jitter;
+  // ==========================================================
+  // WORLD STRENGTH
+  // ==========================================================
 
-      positions[i3] =
-        Math.cos(angle) *
-        radius;
+  const organismStrength =
+    getOrganismStrength(
+      nature,
+      fluidity,
+      fantasy
+    );
 
-      positions[i3 + 1] =
-        (random() - 0.5) *
-        (
-          0.15 +
-          radius * 0.035
-        );
 
-      positions[i3 + 2] =
-        Math.sin(angle) *
-        radius;
+  const waveStrength =
+    getWaveStrength(
+      fluidity,
+      speed,
+      fantasy
+    );
 
-      randoms[i] = random();
 
-      sizes[i] =
-        0.6 +
-        random() * 1.8;
-    }
+  const crystalStrength =
+    getCrystalStrength(
+      tension,
+      fantasy,
+      chaos
+    );
 
-    return {
-      positions,
-      randoms,
-      sizes,
-    };
-  }, []);
 
-  // =========================================================
-  // SHADER
-  // =========================================================
+  const galaxyStrength =
+    clamp01(
+      (
+        1 -
+        organismStrength *
+          0.22 -
+        waveStrength *
+          0.16 -
+        crystalStrength *
+          0.16
+      ) *
+      mix
+    );
 
-  const shader = useMemo(() => {
-    return {
-      uniforms: {
-        uTime: {
-          value: 0,
-        },
 
-        uFantasy: {
-          value: fantasy,
-        },
+  // ==========================================================
+  // RAW MORPHOLOGY
+  // ==========================================================
 
-        uSpaciousness: {
-          value: spaciousness,
-        },
+  /*
+   * Spiral
+   *
+   * 幻想
+   * 混沌
+   * 運動
+   */
 
-        uSpeed: {
-          value: speed,
-        },
+  const rawSpiral =
+    clamp01(
+      fantasy *
+        0.38 +
+      chaos *
+        0.34 +
+      speed *
+        0.18 +
+      spaciousness *
+        0.10
+    );
 
-        uDarkness: {
-          value: darkness,
-        },
 
-        uWarmth: {
-          value: warmth,
-        },
+  /*
+   * Orbital
+   *
+   * 静けさ
+   * 孤独
+   * 幻想
+   */
 
-        uChaos: {
-          value: chaos,
-        },
+  const rawOrbital =
+    clamp01(
+      quietness *
+        0.40 +
+      solitude *
+        0.30 +
+      fantasy *
+        0.22 +
+      hope *
+        0.08 -
+      chaos *
+        0.30
+    );
 
-        uSolitude: {
-          value: solitude,
-        },
 
-        uHope: {
-          value: hope,
-        },
+  /*
+   * Star Field
+   *
+   * 広大
+   * 静寂
+   * 孤独
+   */
 
-        uStrength: {
-          value: galaxyStrength,
-        },
+  const rawStarField =
+    clamp01(
+      spaciousness *
+        0.48 +
+      quietness *
+        0.28 +
+      solitude *
+        0.16 +
+      fantasy *
+        0.08
+    );
+
+
+  /*
+   * Singularity
+   *
+   * 暗闇
+   * 緊張
+   * 混沌
+   */
+
+  const rawSingularity =
+    clamp01(
+      darkness *
+        0.48 +
+      tension *
+        0.28 +
+      chaos *
+        0.16 +
+      solitude *
+        0.08
+    );
+
+
+  // ==========================================================
+  // MORPHOLOGY ACTIVATION
+  // ==========================================================
+
+  /*
+   * 中間値をかなり削り、
+   * DNAによる見た目の差を強くする。
+   */
+
+  const spiralStrength =
+    smoothstep(
+      0.48,
+      0.77,
+      rawSpiral
+    );
+
+
+  const orbitalStrength =
+    smoothstep(
+      0.47,
+      0.74,
+      rawOrbital
+    );
+
+
+  const starFieldStrength =
+    smoothstep(
+      0.40,
+      0.70,
+      rawStarField
+    );
+
+
+  const singularityStrength =
+    smoothstep(
+      0.51,
+      0.78,
+      rawSingularity
+    );
+
+
+  // ==========================================================
+  // PRIMARY MORPHOLOGY
+  // ==========================================================
+
+  /*
+   * 一番強い形態を少し強調する。
+   *
+   * 「全部同じくらい見える」
+   * 状態を避ける。
+   */
+
+  const morphologyMax =
+    Math.max(
+      spiralStrength,
+      orbitalStrength,
+      starFieldStrength,
+      singularityStrength
+    );
+
+
+  const primaryBoost = 0.20;
+
+
+  const spiralVisual =
+    clamp01(
+      spiralStrength +
+      (
+        spiralStrength ===
+        morphologyMax
+          ? primaryBoost
+          : 0
+      )
+    );
+
+
+  const orbitalVisual =
+    clamp01(
+      orbitalStrength +
+      (
+        orbitalStrength ===
+        morphologyMax
+          ? primaryBoost
+          : 0
+      )
+    );
+
+
+  const starFieldVisual =
+    clamp01(
+      starFieldStrength +
+      (
+        starFieldStrength ===
+        morphologyMax
+          ? primaryBoost
+          : 0
+      )
+    );
+
+
+  const singularityVisual =
+    clamp01(
+      singularityStrength +
+      (
+        singularityStrength ===
+        morphologyMax
+          ? primaryBoost
+          : 0
+      )
+    );
+
+
+  // ==========================================================
+  // COMPOSITION
+  // ==========================================================
+
+  /*
+   * solitude
+   * → 主役を小さくする
+   * → 大きな余白
+   */
+
+  const subjectScale =
+    1.08 -
+    solitude *
+      0.30 +
+    spaciousness *
+      0.10;
+
+
+  /*
+   * hope
+   * → 上方向へ
+   */
+
+  const subjectY =
+    (
+      hope -
+      0.5
+    ) *
+    0.72;
+
+
+  /*
+   * chaos
+   * → 中央から外す
+   */
+
+  const subjectX =
+    (
+      chaos -
+      0.5
+    ) *
+    0.95;
+
+
+  /*
+   * tension
+   * → 少し奥へ
+   */
+
+  const subjectZ =
+    (
+      tension -
+      0.5
+    ) *
+    -0.5;
+
+
+  // ==========================================================
+  // SPIRAL GEOMETRY
+  // ==========================================================
+
+  const geometryData =
+    useMemo(
+      () => {
+
+        const random =
+          createSeededRandom(
+            12457
+          );
+
+
+        const count =
+          8500;
+
+
+        const positions =
+          new Float32Array(
+            count * 3
+          );
+
+
+        const randoms =
+          new Float32Array(
+            count
+          );
+
+
+        const sizes =
+          new Float32Array(
+            count
+          );
+
+
+        for (
+          let i = 0;
+          i < count;
+          i++
+        ) {
+
+          const i3 =
+            i * 3;
+
+
+          /*
+           * 4-arm spiral
+           *
+           * 5本より少し
+           * 自然な銀河形状へ変更
+           */
+
+          const arm =
+            i % 4;
+
+
+          const armAngle =
+            (
+              arm /
+              4
+            ) *
+            Math.PI *
+            2;
+
+
+          const normalizedRadius =
+            Math.pow(
+              random(),
+              0.72
+            );
+
+
+          const radius =
+            normalizedRadius *
+            11.5;
+
+
+          const spiral =
+            radius *
+            0.82;
+
+
+          /*
+           * 外側ほど広げる
+           */
+
+          const spread =
+            0.35 +
+            radius *
+              0.075;
+
+
+          const jitter =
+            (
+              random() -
+              0.5
+            ) *
+            spread;
+
+
+          const angle =
+            armAngle +
+            spiral +
+            jitter;
+
+
+          positions[
+            i3
+          ] =
+            Math.cos(
+              angle
+            ) *
+            radius;
+
+
+          positions[
+            i3 + 1
+          ] =
+            (
+              random() -
+              0.5
+            ) *
+            (
+              0.12 +
+              radius *
+                0.04
+            );
+
+
+          positions[
+            i3 + 2
+          ] =
+            Math.sin(
+              angle
+            ) *
+            radius;
+
+
+          randoms[
+            i
+          ] =
+            random();
+
+
+          /*
+           * 大部分は小粒
+           * 一部だけ大きくする
+           */
+
+          const bright =
+            random();
+
+
+          sizes[
+            i
+          ] =
+            bright >
+            0.96
+              ? 2.2 +
+                random() *
+                  1.8
+              : 0.45 +
+                random() *
+                  1.25;
+        }
+
+
+        return {
+          positions,
+          randoms,
+          sizes,
+        };
       },
+      []
+    );
 
-      vertexShader: `
-        uniform float uTime;
-        uniform float uFantasy;
-        uniform float uSpaciousness;
-        uniform float uSpeed;
-        uniform float uChaos;
-        uniform float uSolitude;
-        uniform float uHope;
 
-        attribute float aRandom;
-        attribute float aSize;
+  // ==========================================================
+  // DEEP STAR FIELD
+  // ==========================================================
 
-        varying float vRandom;
-        varying float vBrightness;
-        varying float vRadius;
+  const starFieldData =
+    useMemo(
+      () => {
 
-        void main() {
-          vec3 pos = position;
+        const random =
+          createSeededRandom(
+            92831
+          );
 
-          float radius =
-            length(pos.xz);
 
-          vRadius = radius;
-          vRandom = aRandom;
+        const count =
+          1800;
 
-          float time =
-            uTime *
+
+        const positions =
+          new Float32Array(
+            count * 3
+          );
+
+
+        for (
+          let i = 0;
+          i < count;
+          i++
+        ) {
+
+          const i3 =
+            i * 3;
+
+
+          positions[
+            i3
+          ] =
             (
-              0.08 +
-              uSpeed * 0.35
-            );
+              random() -
+              0.5
+            ) *
+            38;
 
-          /*
-           * 銀河全体の渦巻き
-           */
-          float rotation =
-            time *
+
+          positions[
+            i3 + 1
+          ] =
             (
-              0.25 +
-              radius * 0.018
-            );
-
-          float c =
-            cos(rotation);
-
-          float s =
-            sin(rotation);
-
-          mat2 rot =
-            mat2(
-              c,
-              -s,
-              s,
-              c
-            );
-
-          pos.xz =
-            rot *
-            pos.xz;
-
-          /*
-           * fantasy
-           * → 空間のうねり
-           */
-          pos.y +=
-            sin(
-              radius * 0.8 +
-              uTime * 0.7 +
-              aRandom * 6.283
+              random() -
+              0.5
             ) *
-            uFantasy *
-            0.32;
+            22;
 
-          /*
-           * chaos
-           * → 星の軌道を乱す
-           */
-          pos.x +=
-            sin(
-              pos.z * 0.7 +
-              uTime * 1.2 +
-              aRandom * 10.0
+
+          positions[
+            i3 + 2
+          ] =
+            -5 -
+            random() *
+              30;
+        }
+
+
+        return {
+          positions,
+        };
+      },
+      []
+    );
+
+
+  // ==========================================================
+  // FOREGROUND STARS
+  // ==========================================================
+
+  const foregroundStars =
+    useMemo(
+      () => {
+
+        const random =
+          createSeededRandom(
+            38291
+          );
+
+
+        const count =
+          180;
+
+
+        const positions =
+          new Float32Array(
+            count * 3
+          );
+
+
+        for (
+          let i = 0;
+          i < count;
+          i++
+        ) {
+
+          const i3 =
+            i * 3;
+
+
+          positions[
+            i3
+          ] =
+            (
+              random() -
+              0.5
             ) *
-            uChaos *
-            0.18;
+            20;
 
-          pos.z +=
-            cos(
-              pos.x * 0.6 +
-              uTime * 0.9 +
-              aRandom * 8.0
+
+          positions[
+            i3 + 1
+          ] =
+            (
+              random() -
+              0.5
             ) *
-            uChaos *
-            0.18;
+            12;
 
-          /*
-           * spaciousness
-           * → 世界の広がり
-           */
-          float worldScale =
-            0.65 +
-            uSpaciousness * 0.9;
 
-          pos.xz *=
-            worldScale;
+          positions[
+            i3 + 2
+          ] =
+            2 -
+            random() *
+              9;
+        }
 
-          /*
-           * solitude
-           * → 中心から離す
-           */
-          pos.xz *=
-            0.85 +
-            uSolitude * 0.45;
 
-          /*
-           * 星の瞬き
-           */
-          float twinkle =
-            sin(
+        return {
+          positions,
+        };
+      },
+      []
+    );
+
+
+  // ==========================================================
+  // GALAXY SHADER
+  // ==========================================================
+
+  const shader =
+    useMemo(
+      () => ({
+        uniforms: {
+
+          uTime: {
+            value: 0,
+          },
+
+          uFantasy: {
+            value: fantasy,
+          },
+
+          uSpaciousness: {
+            value:
+              spaciousness,
+          },
+
+          uSpeed: {
+            value: speed,
+          },
+
+          uDarkness: {
+            value:
+              darkness,
+          },
+
+          uWarmth: {
+            value: warmth,
+          },
+
+          uChaos: {
+            value: chaos,
+          },
+
+          uSolitude: {
+            value:
+              solitude,
+          },
+
+          uHope: {
+            value: hope,
+          },
+
+          uStrength: {
+            value: 0,
+          },
+        },
+
+
+        // ====================================================
+        // VERTEX SHADER
+        // ====================================================
+
+        vertexShader: `
+          uniform float uTime;
+          uniform float uFantasy;
+          uniform float uSpaciousness;
+          uniform float uSpeed;
+          uniform float uChaos;
+          uniform float uSolitude;
+          uniform float uHope;
+
+          attribute float aRandom;
+          attribute float aSize;
+
+          varying float vRandom;
+          varying float vBrightness;
+          varying float vRadius;
+
+
+          void main() {
+
+            vec3 pos =
+              position;
+
+
+            float radius =
+              length(
+                pos.xz
+              );
+
+
+            vRadius =
+              radius;
+
+            vRandom =
+              aRandom;
+
+
+            /*
+             * Differential rotation
+             */
+
+            float time =
               uTime *
               (
-                1.0 +
-                aRandom * 3.0
-              ) +
-              aRandom * 30.0
-            ) *
-            0.5 +
-            0.5;
+                0.035 +
+                uSpeed *
+                  0.19
+              );
 
-          vBrightness =
-            0.45 +
-            twinkle *
-            (
-              0.35 +
-              uFantasy * 0.45
-            );
 
-          vec4 mvPosition =
-            modelViewMatrix *
-            vec4(
-              pos,
-              1.0
-            );
+            float rotation =
+              time *
+              (
+                0.15 +
+                radius *
+                  0.017
+              );
 
-          float pointSize =
-            aSize *
-            (
-              1.4 +
-              uFantasy * 2.5 +
-              uHope * 1.2
-            );
 
-          gl_PointSize =
-            pointSize *
-            (
-              80.0 /
-              -mvPosition.z
-            );
+            float c =
+              cos(
+                rotation
+              );
 
-          gl_Position =
-            projectionMatrix *
-            mvPosition;
-        }
-      `,
 
-      fragmentShader: `
-        uniform float uDarkness;
-        uniform float uWarmth;
-        uniform float uHope;
-        uniform float uFantasy;
-        uniform float uStrength;
+            float s =
+              sin(
+                rotation
+              );
 
-        varying float vRandom;
-        varying float vBrightness;
-        varying float vRadius;
 
-        void main() {
-          vec2 uv =
-            gl_PointCoord -
-            vec2(0.5);
+            mat2 rot =
+              mat2(
+                c,
+                -s,
+                s,
+                c
+              );
 
-          float dist =
-            length(uv);
 
-          if (dist > 0.5) {
-            discard;
+            pos.xz =
+              rot *
+              pos.xz;
+
+
+            /*
+             * Vertical breathing
+             */
+
+            pos.y +=
+              sin(
+                radius *
+                  0.65 +
+                uTime *
+                  0.30 +
+                aRandom *
+                  6.283
+              ) *
+              uFantasy *
+              0.26;
+
+
+            /*
+             * Chaos deformation
+             */
+
+            pos.x +=
+              sin(
+                pos.z *
+                  0.55 +
+                uTime *
+                  0.48 +
+                aRandom *
+                  9.0
+              ) *
+              uChaos *
+              0.16;
+
+
+            pos.z +=
+              cos(
+                pos.x *
+                  0.50 +
+                uTime *
+                  0.42 +
+                aRandom *
+                  7.0
+              ) *
+              uChaos *
+              0.16;
+
+
+            /*
+             * Scale
+             */
+
+            float worldScale =
+              0.60 +
+              uSpaciousness *
+                0.88;
+
+
+            pos.xz *=
+              worldScale;
+
+
+            /*
+             * Solitude
+             * slight radial expansion
+             */
+
+            pos.xz *=
+              0.88 +
+              uSolitude *
+                0.30;
+
+
+            /*
+             * Twinkle
+             */
+
+            float twinkle =
+              sin(
+                uTime *
+                  (
+                    0.55 +
+                    aRandom *
+                      1.6
+                  ) +
+                aRandom *
+                  27.0
+              ) *
+              0.5 +
+              0.5;
+
+
+            vBrightness =
+              0.40 +
+              twinkle *
+                (
+                  0.24 +
+                  uFantasy *
+                    0.32
+                );
+
+
+            vec4 mvPosition =
+              modelViewMatrix *
+              vec4(
+                pos,
+                1.0
+              );
+
+
+            float pointSize =
+              aSize *
+              (
+                1.15 +
+                uFantasy *
+                  1.65 +
+                uHope *
+                  0.55
+              );
+
+
+            gl_PointSize =
+              pointSize *
+              (
+                80.0 /
+                max(
+                  1.0,
+                  -mvPosition.z
+                )
+              );
+
+
+            gl_Position =
+              projectionMatrix *
+              mvPosition;
           }
+        `,
 
-          float core =
-            1.0 -
-            smoothstep(
-              0.0,
-              0.5,
-              dist
-            );
 
-          float glow =
-            1.0 -
-            smoothstep(
-              0.05,
-              0.5,
-              dist
-            );
+        // ====================================================
+        // FRAGMENT SHADER
+        // ====================================================
 
-          vec3 cold =
-            vec3(
-              0.32,
-              0.58,
-              1.0
-            );
+        fragmentShader: `
+          uniform float uDarkness;
+          uniform float uWarmth;
+          uniform float uHope;
+          uniform float uFantasy;
+          uniform float uStrength;
 
-          vec3 warm =
-            vec3(
-              1.0,
-              0.58,
-              0.28
-            );
+          varying float vRandom;
+          varying float vBrightness;
+          varying float vRadius;
 
-          vec3 color =
-            mix(
-              cold,
-              warm,
-              uWarmth
-            );
 
-          color =
-            mix(
-              color,
-              vec3(1.0),
-              uHope * 0.35
-            );
+          void main() {
 
-          /*
-           * 中心に近い星ほど明るく
-           */
-          float centerGlow =
-            1.0 /
-            (
-              1.0 +
-              vRadius * 0.12
-            );
+            vec2 uv =
+              gl_PointCoord -
+              vec2(
+                0.5
+              );
 
-          float brightness =
-  vBrightness * 0.55 +
-  centerGlow *
-  (
-    0.2 +
-    uHope * 0.45
-  );
 
-          /*
-           * Bloomで拾わせるため
-           * 1.0を超える輝度も許可
-           */
-          vec3 finalColor =
-  color *
-  brightness *
-  (
-    0.35 +
-    uFantasy * 0.25
-  );
+            float dist =
+              length(
+                uv
+              );
 
-          float alpha =
-            (
-              core * 0.75 +
-              glow * 0.35
-            ) *
-            (
-              0.25 +
-              uStrength * 0.75
-            ) *
-            (
+
+            if (
+              dist >
+              0.5
+            ) {
+              discard;
+            }
+
+
+            /*
+             * soft star
+             */
+
+            float core =
               1.0 -
-              uDarkness * 0.45
-            );
+              smoothstep(
+                0.0,
+                0.22,
+                dist
+              );
 
-          gl_FragColor =
-            vec4(
-              finalColor,
-              alpha
-            );
-        }
-      `,
-    };
-  }, []);
 
-  // =========================================================
-  // UNIFORM UPDATE
-  // =========================================================
+            float glow =
+              1.0 -
+              smoothstep(
+                0.04,
+                0.5,
+                dist
+              );
 
-  useFrame((state, delta) => {
-    if (materialRef.current) {
-      const uniforms =
-        materialRef.current.uniforms;
 
-      uniforms.uTime.value =
+            /*
+             * palette
+             */
+
+            vec3 deepBlue =
+              vec3(
+                0.18,
+                0.36,
+                0.92
+              );
+
+
+            vec3 iceBlue =
+              vec3(
+                0.42,
+                0.80,
+                1.0
+              );
+
+
+            vec3 warmColor =
+              vec3(
+                1.0,
+                0.58,
+                0.30
+              );
+
+
+            vec3 color =
+              mix(
+                deepBlue,
+                iceBlue,
+                uFantasy *
+                  0.58
+              );
+
+
+            color =
+              mix(
+                color,
+                warmColor,
+                uWarmth *
+                  0.48
+              );
+
+
+            color =
+              mix(
+                color,
+                vec3(
+                  1.0
+                ),
+                uHope *
+                  0.22
+              );
+
+
+            /*
+             * core luminosity
+             */
+
+            float centerGlow =
+              1.0 /
+              (
+                1.0 +
+                vRadius *
+                  0.11
+              );
+
+
+            float brightness =
+              vBrightness *
+                0.56 +
+              centerGlow *
+                (
+                  0.18 +
+                  uHope *
+                    0.26
+                );
+
+
+            /*
+             * rare stars
+             */
+
+            float rareStar =
+              smoothstep(
+                0.965,
+                1.0,
+                vRandom
+              );
+
+
+            brightness +=
+              rareStar *
+              1.25;
+
+
+            /*
+             * HDR for Bloom
+             */
+
+            vec3 finalColor =
+              color *
+              brightness *
+              (
+                0.42 +
+                uFantasy *
+                  0.34
+              );
+
+
+            float alpha =
+              (
+                core *
+                  0.78 +
+                glow *
+                  0.24
+              ) *
+              uStrength *
+              (
+                1.0 -
+                uDarkness *
+                  0.30
+              );
+
+
+            gl_FragColor =
+              vec4(
+                finalColor,
+                alpha
+              );
+          }
+        `,
+      }),
+      []
+    );
+
+
+  // ==========================================================
+  // ANIMATION
+  // ==========================================================
+
+  useFrame(
+    (
+      state,
+      delta
+    ) => {
+
+      const t =
         state.clock.elapsedTime;
 
-      uniforms.uFantasy.value =
-        fantasy;
 
-      uniforms.uSpaciousness.value =
-        spaciousness;
+      // ======================================================
+      // ROOT / COMPOSITION
+      // ======================================================
 
-      uniforms.uSpeed.value =
-        speed;
+      if (
+        rootRef.current
+      ) {
 
-      uniforms.uDarkness.value =
-        darkness;
+        /*
+         * 呼吸するような
+         * ごく弱い浮遊
+         */
 
-      uniforms.uWarmth.value =
-        warmth;
+        rootRef.current.position.y =
+          subjectY +
+          Math.sin(
+            t *
+              0.08
+          ) *
+            0.035;
 
-      uniforms.uChaos.value =
-        chaos;
 
-      uniforms.uSolitude.value =
-        solitude;
+        rootRef.current.position.x =
+          subjectX +
+          Math.sin(
+            t *
+              0.045
+          ) *
+            chaos *
+            0.08;
 
-      uniforms.uHope.value =
-        hope;
 
-      uniforms.uStrength.value =
-        galaxyStrength;
-    }
+        rootRef.current.position.z =
+          subjectZ;
 
-    if (pointsRef.current) {
-      pointsRef.current.rotation.z +=
-        delta *
-        (
-          0.0005 +
-          speed * 0.002
+
+        const breathing =
+          1 +
+          Math.sin(
+            t *
+              0.06
+          ) *
+            0.015;
+
+
+        rootRef.current.scale.setScalar(
+          subjectScale *
+          breathing
         );
-    }
-  });
+      }
 
-  // =========================================================
+
+      // ======================================================
+      // SHADER
+      // ======================================================
+
+      if (
+        materialRef.current
+      ) {
+
+        const uniforms =
+          materialRef.current
+            .uniforms;
+
+
+        uniforms.uTime.value =
+          t;
+
+
+        uniforms.uFantasy.value =
+          fantasy;
+
+
+        uniforms.uSpaciousness.value =
+          spaciousness;
+
+
+        uniforms.uSpeed.value =
+          speed;
+
+
+        uniforms.uDarkness.value =
+          darkness;
+
+
+        uniforms.uWarmth.value =
+          warmth;
+
+
+        uniforms.uChaos.value =
+          chaos;
+
+
+        uniforms.uSolitude.value =
+          solitude;
+
+
+        uniforms.uHope.value =
+          hope;
+
+
+        uniforms.uStrength.value =
+          galaxyStrength *
+          spiralVisual;
+      }
+
+
+      // ======================================================
+      // SPIRAL
+      // ======================================================
+
+      if (
+        spiralRef.current
+      ) {
+
+        spiralRef.current.rotation.y +=
+          delta *
+          (
+            0.001 +
+            speed *
+              0.004
+          );
+
+
+        spiralRef.current.rotation.z =
+          Math.sin(
+            t *
+              0.018
+          ) *
+          (
+            0.015 +
+            chaos *
+              0.035
+          );
+      }
+
+
+      // ======================================================
+      // DEEP STARS
+      // ======================================================
+
+      if (
+        deepStarsRef.current
+      ) {
+
+        deepStarsRef.current.rotation.y =
+          Math.sin(
+            t *
+              0.012
+          ) *
+          0.018;
+
+
+        deepStarsRef.current.position.x =
+          Math.sin(
+            t *
+              0.02
+          ) *
+          0.10;
+      }
+
+
+      // ======================================================
+      // FOREGROUND PARALLAX
+      // ======================================================
+
+      if (
+        foregroundStarsRef.current
+      ) {
+
+        foregroundStarsRef.current.position.x =
+          Math.sin(
+            t *
+              0.035
+          ) *
+          0.16;
+
+
+        foregroundStarsRef.current.position.y =
+          Math.cos(
+            t *
+              0.026
+          ) *
+          0.08;
+      }
+
+
+      // ======================================================
+      // ORBITALS
+      // ======================================================
+
+      if (
+        orbitalGroupRef.current
+      ) {
+
+        orbitalGroupRef.current.rotation.y +=
+          delta *
+          (
+            0.008 +
+            speed *
+              0.018
+          );
+
+
+        orbitalGroupRef.current.rotation.x =
+          0.60 +
+          Math.sin(
+            t *
+              0.07
+          ) *
+          0.075;
+      }
+
+
+      // ======================================================
+      // SINGULARITY
+      // ======================================================
+
+      if (
+        singularityRef.current
+      ) {
+
+        const pulse =
+          1 +
+          Math.sin(
+            t *
+              (
+                0.28 +
+                tension *
+                  0.55
+              )
+          ) *
+          (
+            0.012 +
+            tension *
+              0.025
+          );
+
+
+        singularityRef.current.scale.setScalar(
+          pulse
+        );
+
+
+        singularityRef.current.rotation.z +=
+          delta *
+          (
+            0.006 +
+            chaos *
+              0.015
+          );
+      }
+    }
+  );
+
+
+  // ==========================================================
   // RENDER
-  // =========================================================
+  // ==========================================================
 
   return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[
-            geometryData.positions,
-            3,
-          ]}
+    <group
+      ref={rootRef}
+    >
+
+      {/* ===================================================== */}
+      {/* DEEP STAR FIELD                                       */}
+      {/* ===================================================== */}
+
+      <points
+        ref={deepStarsRef}
+      >
+
+        <bufferGeometry>
+
+          <bufferAttribute
+            attach="attributes-position"
+            args={[
+              starFieldData.positions,
+              3,
+            ]}
+          />
+
+        </bufferGeometry>
+
+
+        <pointsMaterial
+          size={
+            0.018 +
+            fantasy *
+              0.013
+          }
+          transparent
+          opacity={
+            galaxyStrength *
+            starFieldVisual *
+            0.46
+          }
+          depthWrite={false}
+          blending={
+            THREE.AdditiveBlending
+          }
+          color={
+            new THREE.Color(
+              0.34,
+              0.56,
+              1.0
+            )
+          }
+          toneMapped={false}
+          sizeAttenuation
         />
 
-        <bufferAttribute
-          attach="attributes-aRandom"
-          args={[
-            geometryData.randoms,
-            1,
-          ]}
-        />
+      </points>
 
-        <bufferAttribute
-          attach="attributes-aSize"
-          args={[
-            geometryData.sizes,
-            1,
-          ]}
-        />
-      </bufferGeometry>
 
-      <shaderMaterial
-        ref={materialRef}
-        args={[shader]}
-        transparent
-        depthWrite={false}
-        blending={
-          THREE.AdditiveBlending
+      {/* ===================================================== */}
+      {/* FOREGROUND STARS                                      */}
+      {/* ===================================================== */}
+
+      <points
+        ref={
+          foregroundStarsRef
         }
-        vertexColors={false}
-        toneMapped={false}
-      />
-    </points>
+      >
+
+        <bufferGeometry>
+
+          <bufferAttribute
+            attach="attributes-position"
+            args={[
+              foregroundStars.positions,
+              3,
+            ]}
+          />
+
+        </bufferGeometry>
+
+
+        <pointsMaterial
+          size={
+            0.028 +
+            fantasy *
+              0.018
+          }
+          transparent
+          opacity={
+            galaxyStrength *
+            starFieldVisual *
+            0.20
+          }
+          depthWrite={false}
+          blending={
+            THREE.AdditiveBlending
+          }
+          color={
+            new THREE.Color(
+              0.70,
+              0.84,
+              1.0
+            )
+          }
+          toneMapped={false}
+          sizeAttenuation
+        />
+
+      </points>
+
+
+      {/* ===================================================== */}
+      {/* SPIRAL GALAXY                                         */}
+      {/* ===================================================== */}
+
+      <points
+        ref={spiralRef}
+        rotation={[
+          0.18,
+          0,
+          -0.12,
+        ]}
+      >
+
+        <bufferGeometry>
+
+          <bufferAttribute
+            attach="attributes-position"
+            args={[
+              geometryData.positions,
+              3,
+            ]}
+          />
+
+
+          <bufferAttribute
+            attach="attributes-aRandom"
+            args={[
+              geometryData.randoms,
+              1,
+            ]}
+          />
+
+
+          <bufferAttribute
+            attach="attributes-aSize"
+            args={[
+              geometryData.sizes,
+              1,
+            ]}
+          />
+
+        </bufferGeometry>
+
+
+        <shaderMaterial
+          ref={materialRef}
+          args={[
+            shader,
+          ]}
+          transparent
+          depthWrite={false}
+          blending={
+            THREE.AdditiveBlending
+          }
+          vertexColors={false}
+          toneMapped={false}
+        />
+
+      </points>
+
+
+      {/* ===================================================== */}
+      {/* ORBITAL SYSTEM                                        */}
+      {/* ===================================================== */}
+
+      <group
+        ref={orbitalGroupRef}
+        scale={
+          0.64 +
+          spaciousness *
+            0.72
+        }
+      >
+
+        {/* PRIMARY ORBIT */}
+
+        <mesh
+          rotation={[
+            Math.PI *
+              0.5,
+            0,
+            0,
+          ]}
+        >
+
+          <ringGeometry
+            args={[
+              2.55,
+              2.575,
+              256,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            transparent
+            opacity={
+              galaxyStrength *
+              orbitalVisual *
+              0.30
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            color={
+              new THREE.Color(
+                0.26,
+                0.54,
+                1.0
+              )
+            }
+            side={
+              THREE.DoubleSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+
+        {/* SECOND ORBIT */}
+
+        <mesh
+          rotation={[
+            Math.PI *
+              0.36,
+            0.70,
+            0.52,
+          ]}
+          scale={1.30}
+        >
+
+          <ringGeometry
+            args={[
+              2.55,
+              2.568,
+              256,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            transparent
+            opacity={
+              galaxyStrength *
+              orbitalVisual *
+              0.13
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            color={
+              new THREE.Color(
+                0.44,
+                0.70,
+                1.0
+              )
+            }
+            side={
+              THREE.DoubleSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+
+        {/* THIRD ORBIT */}
+
+        <mesh
+          rotation={[
+            Math.PI *
+              0.64,
+            -0.62,
+            -0.42,
+          ]}
+          scale={0.77}
+        >
+
+          <ringGeometry
+            args={[
+              2.55,
+              2.565,
+              256,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            transparent
+            opacity={
+              galaxyStrength *
+              orbitalVisual *
+              0.085
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            color={
+              new THREE.Color(
+                0.70,
+                0.84,
+                1.0
+              )
+            }
+            side={
+              THREE.DoubleSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+      </group>
+
+
+      {/* ===================================================== */}
+      {/* SINGULARITY                                           */}
+      {/* ===================================================== */}
+
+      <group
+        ref={
+          singularityRef
+        }
+      >
+
+        {/* BLACK CORE */}
+
+        <mesh
+          scale={
+            0.34 +
+            singularityVisual *
+              0.46
+          }
+        >
+
+          <sphereGeometry
+            args={[
+              0.68,
+              48,
+              48,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            color={
+              new THREE.Color(
+                0.001,
+                0.002,
+                0.008
+              )
+            }
+            transparent
+            opacity={
+              galaxyStrength *
+              singularityVisual *
+              0.96
+            }
+            depthWrite
+          />
+
+        </mesh>
+
+
+        {/* INNER HALO */}
+
+        <mesh
+          scale={
+            0.60 +
+            singularityVisual *
+              0.74
+          }
+        >
+
+          <sphereGeometry
+            args={[
+              0.74,
+              48,
+              48,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            color={
+              new THREE.Color(
+                0.10,
+                0.30,
+                1.0
+              )
+            }
+            transparent
+            opacity={
+              galaxyStrength *
+              singularityVisual *
+              0.065
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            side={
+              THREE.BackSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+
+        {/* ACCRETION DISK 1 */}
+
+        <mesh
+          rotation={[
+            Math.PI *
+              0.52,
+            0,
+            chaos *
+              0.38,
+          ]}
+          scale={
+            0.42 +
+            singularityVisual *
+              0.86
+          }
+        >
+
+          <ringGeometry
+            args={[
+              0.90,
+              1.08,
+              192,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            transparent
+            opacity={
+              galaxyStrength *
+              singularityVisual *
+              0.25
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            color={
+              new THREE.Color(
+                0.30,
+                0.56,
+                1.0
+              )
+            }
+            side={
+              THREE.DoubleSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+
+        {/* ACCRETION DISK 2 */}
+
+        <mesh
+          rotation={[
+            Math.PI *
+              0.49,
+            0.08,
+            -0.18,
+          ]}
+          scale={
+            0.52 +
+            singularityVisual *
+              1.05
+          }
+        >
+
+          <ringGeometry
+            args={[
+              0.95,
+              1.00,
+              192,
+            ]}
+          />
+
+
+          <meshBasicMaterial
+            transparent
+            opacity={
+              galaxyStrength *
+              singularityVisual *
+              0.11
+            }
+            depthWrite={false}
+            blending={
+              THREE.AdditiveBlending
+            }
+            color={
+              new THREE.Color(
+                0.62,
+                0.78,
+                1.0
+              )
+            }
+            side={
+              THREE.DoubleSide
+            }
+            toneMapped={false}
+          />
+
+        </mesh>
+
+      </group>
+
+    </group>
   );
 }

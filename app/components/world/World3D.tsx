@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -20,10 +21,6 @@ import * as THREE from "three";
 import type {
   World3DProps,
 } from "./types";
-
-import {
-  getVoidStrength,
-} from "./strengths";
 
 import {
   completeDNA,
@@ -53,6 +50,23 @@ import VoidWorld from "./VoidWorld";
 
 
 // ============================================================
+// HELPERS
+// ============================================================
+
+function clamp01(
+  value: number
+) {
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      value
+    )
+  );
+}
+
+
+// ============================================================
 // DNA SMOOTHING
 // ============================================================
 
@@ -61,12 +75,14 @@ function SmoothWorld({
 }: {
   targetDNA: World3DProps;
 }) {
+
   const currentDNARef =
     useRef<CompleteWorldDNA>(
       completeDNA(
         targetDNA
       )
     );
+
 
   const [
     smoothDNA,
@@ -79,8 +95,11 @@ function SmoothWorld({
         )
     );
 
+
   const updateTimerRef =
-    useRef(0);
+    useRef(
+      0
+    );
 
 
   useFrame(
@@ -88,16 +107,26 @@ function SmoothWorld({
       _state,
       delta
     ) => {
+
       const current =
         currentDNARef.current;
+
 
       const target =
         completeDNA(
           targetDNA
         );
 
+
+      /*
+       * 以前より少し遅め。
+       *
+       * テキスト変更時に
+       * 世界が呼吸しながら変わる感じ。
+       */
+
       const smoothingSpeed =
-        2.6;
+        2.0;
 
 
       current.quietness =
@@ -108,6 +137,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.chaos =
         damp(
           current.chaos,
@@ -115,6 +145,7 @@ function SmoothWorld({
           smoothingSpeed,
           delta
         );
+
 
       current.solitude =
         damp(
@@ -124,6 +155,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.hope =
         damp(
           current.hope,
@@ -131,6 +163,7 @@ function SmoothWorld({
           smoothingSpeed,
           delta
         );
+
 
       current.fantasy =
         damp(
@@ -140,6 +173,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.nature =
         damp(
           current.nature,
@@ -147,6 +181,7 @@ function SmoothWorld({
           smoothingSpeed,
           delta
         );
+
 
       current.darkness =
         damp(
@@ -156,6 +191,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.speed =
         damp(
           current.speed,
@@ -163,6 +199,7 @@ function SmoothWorld({
           smoothingSpeed,
           delta
         );
+
 
       current.warmth =
         damp(
@@ -172,6 +209,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.spaciousness =
         damp(
           current.spaciousness,
@@ -180,6 +218,7 @@ function SmoothWorld({
           delta
         );
 
+
       current.tension =
         damp(
           current.tension,
@@ -187,6 +226,7 @@ function SmoothWorld({
           smoothingSpeed,
           delta
         );
+
 
       current.fluidity =
         damp(
@@ -197,11 +237,16 @@ function SmoothWorld({
         );
 
 
-      /*
-       * Reactへの反映は約30fps
-       */
       updateTimerRef.current +=
         delta;
+
+
+      /*
+       * React側は30fps程度に制限。
+       *
+       * Shader animation自体は
+       * useFrameで毎フレーム動くので問題なし。
+       */
 
       if (
         updateTimerRef.current <
@@ -210,8 +255,10 @@ function SmoothWorld({
         return;
       }
 
+
       updateTimerRef.current =
         0;
+
 
       setSmoothDNA({
         ...current,
@@ -237,7 +284,10 @@ function CenterLight({
   darkness = 0.5,
   warmth = 0.5,
   solitude = 0.5,
+  tension = 0.5,
+  fantasy = 0.5,
 }: World3DProps) {
+
   const lightRef =
     useRef<THREE.Mesh>(
       null
@@ -245,25 +295,41 @@ function CenterLight({
 
 
   useFrame(
-    (state) => {
+    (
+      state
+    ) => {
+
       if (
         !lightRef.current
       ) {
         return;
       }
 
+
+      const t =
+        state.clock.elapsedTime;
+
+
+      const pulseSpeed =
+        0.45 +
+        tension *
+          0.9;
+
+
       const pulse =
         1 +
         Math.sin(
-          state.clock
-            .elapsedTime *
-            1.4
+          t *
+          pulseSpeed
         ) *
-          (
-            0.03 +
-            hope *
-              0.08
-          );
+        (
+          0.015 +
+          hope *
+            0.055 +
+          fantasy *
+            0.012
+        );
+
 
       lightRef.current
         .scale
@@ -274,46 +340,64 @@ function CenterLight({
   );
 
 
-  const cold =
-    new THREE.Color(
-      "#8aa8ff"
-    );
-
-  const warm =
-    new THREE.Color(
-      "#ffd2a3"
-    );
-
   const color =
-    cold
-      .clone()
-      .lerp(
-        warm,
-        warmth
-      )
-      .lerp(
-        new THREE.Color(
-          "#ffffff"
-        ),
-        hope *
-          0.45
-      );
+    useMemo(
+      () => {
+
+        const cold =
+          new THREE.Color(
+            "#718cff"
+          );
 
 
-  const opacity =
-    Math.max(
-      0,
+        const warm =
+          new THREE.Color(
+            "#ffd0a0"
+          );
+
+
+        return cold
+          .clone()
+          .lerp(
+            warm,
+            warmth
+          )
+          .lerp(
+            new THREE.Color(
+              "#ffffff"
+            ),
+            hope *
+              0.34
+          );
+      },
+      [
+        warmth,
+        hope,
+      ]
+    );
+
+
+  /*
+   * solitudeが高い場合、
+   * 中心の光を小さく弱く。
+   */
+
+  const lightStrength =
+    clamp01(
       hope *
-        0.5 -
-        darkness *
-          0.2 -
-        solitude *
-          0.08
+        0.72 +
+      fantasy *
+        0.16 -
+      darkness *
+        0.26 -
+      solitude *
+        0.16
     );
 
 
   if (
-    opacity <= 0.01
+    lightStrength <=
+    0.015
   ) {
     return null;
   }
@@ -321,18 +405,28 @@ function CenterLight({
 
   return (
     <group>
+
+      {/* CORE */}
+
       <mesh
-        ref={
-          lightRef
+        ref={lightRef}
+        scale={
+          0.72 +
+          hope *
+            0.42 -
+          solitude *
+            0.14
         }
       >
+
         <sphereGeometry
           args={[
-            0.18,
-            32,
-            32,
+            0.16,
+            28,
+            28,
           ]}
         />
+
 
         <meshBasicMaterial
           color={
@@ -340,32 +434,37 @@ function CenterLight({
           }
           transparent
           opacity={
-            0.35 +
-            hope *
-              0.45
+            lightStrength *
+            0.62
           }
           blending={
             THREE.AdditiveBlending
           }
-          depthWrite={
-            false
-          }
+          depthWrite={false}
+          toneMapped={false}
         />
+
       </mesh>
 
 
+      {/* INNER HALO */}
+
       <mesh
         scale={
-          2
+          1.5 +
+          fantasy *
+            0.45
         }
       >
+
         <sphereGeometry
           args={[
-            0.2,
-            32,
-            32,
+            0.25,
+            28,
+            28,
           ]}
         />
+
 
         <meshBasicMaterial
           color={
@@ -373,34 +472,40 @@ function CenterLight({
           }
           transparent
           opacity={
-            opacity *
-            0.3
+            lightStrength *
+            0.10
           }
           blending={
             THREE.AdditiveBlending
           }
-          depthWrite={
-            false
-          }
+          depthWrite={false}
           side={
             THREE.BackSide
           }
+          toneMapped={false}
         />
+
       </mesh>
 
 
+      {/* FAR HALO */}
+
       <mesh
         scale={
-          4
+          3 +
+          fantasy *
+            1.3
         }
       >
+
         <sphereGeometry
           args={[
-            0.2,
-            32,
-            32,
+            0.22,
+            24,
+            24,
           ]}
         />
+
 
         <meshBasicMaterial
           color={
@@ -408,19 +513,19 @@ function CenterLight({
           }
           transparent
           opacity={
-            opacity *
-            0.08
+            lightStrength *
+            0.025
           }
           blending={
             THREE.AdditiveBlending
           }
-          depthWrite={
-            false
-          }
+          depthWrite={false}
           side={
             THREE.BackSide
           }
+          toneMapped={false}
         />
+
       </mesh>
 
 
@@ -429,17 +534,156 @@ function CenterLight({
           color
         }
         intensity={
-          1 +
-          hope *
-            6
+          0.6 +
+          lightStrength *
+            4.2
         }
         distance={
-          18
+          15 +
+          hope *
+            8
         }
-        decay={
-          2
-        }
+        decay={2}
       />
+
+    </group>
+  );
+}
+
+
+// ============================================================
+// GLOBAL WORLD TRANSFORM
+// ============================================================
+
+function WorldStage({
+  children,
+  chaos = 0.5,
+  solitude = 0.5,
+  hope = 0.5,
+  tension = 0.5,
+  spaciousness = 0.5,
+  fluidity = 0.5,
+}: World3DProps & {
+  children:
+    React.ReactNode;
+}) {
+
+  const groupRef =
+    useRef<THREE.Group>(
+      null
+    );
+
+
+  useFrame(
+    (
+      state
+    ) => {
+
+      if (
+        !groupRef.current
+      ) {
+        return;
+      }
+
+
+      const t =
+        state.clock.elapsedTime;
+
+
+      /*
+       * 全Worldを完全に原点固定しない。
+       *
+       * DNAに応じて
+       * 絵の重心自体を少し移動。
+       */
+
+      const baseX =
+        (
+          chaos -
+          0.5
+        ) *
+        0.48;
+
+
+      const baseY =
+        (
+          hope -
+          0.5
+        ) *
+        0.30;
+
+
+      groupRef.current.position.x =
+        baseX +
+        Math.sin(
+          t *
+            0.025
+        ) *
+        fluidity *
+        0.08;
+
+
+      groupRef.current.position.y =
+        baseY +
+        Math.cos(
+          t *
+            0.020
+        ) *
+        0.05;
+
+
+      groupRef.current.position.z =
+        (
+          tension -
+          0.5
+        ) *
+        -0.28;
+
+
+      /*
+       * solitudeが高い
+       * → 小さい対象 + 余白
+       *
+       * spaciousnessが高い
+       * → 少し広げる
+       */
+
+      const scale =
+        1 -
+        solitude *
+          0.12 +
+        spaciousness *
+          0.08;
+
+
+      groupRef.current
+        .scale
+        .setScalar(
+          scale
+        );
+
+
+      /*
+       * chaosによる
+       * ごく小さい傾き
+       */
+
+      groupRef.current.rotation.z =
+        Math.sin(
+          t *
+            0.018
+        ) *
+        chaos *
+        0.025;
+    }
+  );
+
+
+  return (
+    <group
+      ref={groupRef}
+    >
+      {children}
     </group>
   );
 }
@@ -455,66 +699,160 @@ function CameraMotion({
   darkness = 0.5,
   solitude = 0.5,
   spaciousness = 0.5,
+  speed = 0.4,
+  hope = 0.5,
+  chaos = 0.5,
+  fluidity = 0.5,
 }: World3DProps) {
+
+  const lookTarget =
+    useRef(
+      new THREE.Vector3(
+        0,
+        0,
+        0
+      )
+    );
+
+
   useFrame(
     (
       state,
       delta
     ) => {
+
       const camera =
         state.camera;
+
 
       const pointer =
         state.pointer;
 
 
-      const voidStrength =
-        getVoidStrength(
-          darkness,
-          solitude
-        );
+      const t =
+        state.clock.elapsedTime;
 
 
-      const sensitivity =
+      // ======================================================
+      // POINTER PARALLAX
+      // ======================================================
+
+      const pointerSensitivity =
         (
-          0.25 +
+          0.14 +
           tension *
-            0.35
+            0.20 +
+          chaos *
+            0.08
         ) *
         (
           1 -
           quietness *
-            0.5
+            0.55
         );
 
 
-      const targetX =
+      const pointerX =
         pointer.x *
-        sensitivity *
-        2;
+        pointerSensitivity *
+        1.8;
 
-      const targetY =
+
+      const pointerY =
         pointer.y *
-        sensitivity *
-        1.2;
+        pointerSensitivity *
+        1.0;
+
+
+      // ======================================================
+      // CAMERA DISTANCE
+      // ======================================================
+
+      /*
+       * spaciousness
+       * → 少し引く
+       *
+       * solitude
+       * → さらに引いて余白
+       *
+       * tension
+       * → 少し寄る
+       */
 
       const targetZ =
-        11 +
+        10.2 +
         spaciousness *
-          3 -
-        voidStrength *
-          2.5;
+          2.8 +
+        solitude *
+          1.5 -
+        tension *
+          1.1;
 
 
-      const smooth =
+      // ======================================================
+      // CINEMATIC DRIFT
+      // ======================================================
+
+      const driftAmount =
+        0.10 +
+        fluidity *
+          0.22;
+
+
+      const driftX =
+        Math.sin(
+          t *
+          (
+            0.018 +
+            speed *
+              0.012
+          )
+        ) *
+        driftAmount;
+
+
+      const driftY =
+        Math.sin(
+          t *
+            0.014 +
+          1.2
+        ) *
+        driftAmount *
+        0.55;
+
+
+      const targetX =
+        pointerX +
+        driftX;
+
+
+      const targetY =
+        0.75 +
+        pointerY +
+        driftY;
+
+
+      /*
+       * quietness高い
+       * → カメラ移動をゆっくり
+       */
+
+      const responseSpeed =
+        1.25 +
+        (
+          1 -
+          quietness
+        ) *
+          1.1 +
+        tension *
+          0.40;
+
+
+      const smoothing =
         1 -
         Math.exp(
           -delta *
-            (
-              1.5 +
-              quietness *
-                2
-            )
+          responseSpeed
         );
 
 
@@ -522,35 +860,184 @@ function CameraMotion({
         THREE.MathUtils.lerp(
           camera.position.x,
           targetX,
-          smooth
+          smoothing
         );
+
 
       camera.position.y =
         THREE.MathUtils.lerp(
           camera.position.y,
-          1.2 +
-            targetY,
-          smooth
+          targetY,
+          smoothing
         );
+
 
       camera.position.z =
         THREE.MathUtils.lerp(
           camera.position.z,
           targetZ,
-          smooth
+          smoothing
+        );
+
+
+      // ======================================================
+      // LOOK TARGET
+      // ======================================================
+
+      /*
+       * 常に(0,0,0)を見るのではなく
+       * 絵の重心へ微妙に追従。
+       */
+
+      const targetLookX =
+        (
+          chaos -
+          0.5
+        ) *
+        0.28;
+
+
+      const targetLookY =
+        (
+          hope -
+          0.5
+        ) *
+        0.24;
+
+
+      lookTarget.current.x =
+        THREE.MathUtils.lerp(
+          lookTarget.current.x,
+          targetLookX,
+          smoothing *
+            0.55
+        );
+
+
+      lookTarget.current.y =
+        THREE.MathUtils.lerp(
+          lookTarget.current.y,
+          targetLookY,
+          smoothing *
+            0.55
+        );
+
+
+      lookTarget.current.z =
+        THREE.MathUtils.lerp(
+          lookTarget.current.z,
+          0,
+          smoothing *
+            0.5
         );
 
 
       camera.lookAt(
-        0,
-        0,
-        0
+        lookTarget.current
       );
+
+
+      // ======================================================
+      // FOV
+      // ======================================================
+
+      if (
+        camera instanceof
+        THREE.PerspectiveCamera
+      ) {
+
+        const targetFov =
+          53 +
+          spaciousness *
+            5 +
+          chaos *
+            2 -
+          solitude *
+            2;
+
+
+        camera.fov =
+          THREE.MathUtils.lerp(
+            camera.fov,
+            targetFov,
+            smoothing *
+              0.3
+          );
+
+
+        camera.updateProjectionMatrix();
+      }
     }
   );
 
 
   return null;
+}
+
+
+// ============================================================
+// POST PROCESS
+// ============================================================
+
+function PostProcessing({
+  hope = 0.5,
+  fantasy = 0.5,
+  darkness = 0.5,
+  tension = 0.5,
+}: World3DProps) {
+
+  /*
+   * DNAによってBloomも変える。
+   *
+   * 常に同じBloomにしない。
+   */
+
+  const bloomIntensity =
+    0.10 +
+    hope *
+      0.12 +
+    fantasy *
+      0.09 +
+    tension *
+      0.025;
+
+
+  const bloomThreshold =
+    THREE.MathUtils.lerp(
+      1.05,
+      0.78,
+      clamp01(
+        hope *
+          0.45 +
+        fantasy *
+          0.35 +
+        (
+          1 -
+          darkness
+        ) *
+          0.20
+      )
+    );
+
+
+  return (
+    <EffectComposer>
+
+      <Bloom
+        intensity={
+          bloomIntensity
+        }
+        luminanceThreshold={
+          bloomThreshold
+        }
+        luminanceSmoothing={
+          0.22
+        }
+        mipmapBlur
+      />
+
+    </EffectComposer>
+  );
 }
 
 
@@ -561,25 +1048,21 @@ function CameraMotion({
 function Scene(
   props: CompleteWorldDNA
 ) {
+
   const {
     darkness,
     warmth,
     hope,
+    fantasy,
+    spaciousness,
   } =
     props;
 
 
-  // =========================================================
-  // WORLD COMPOSITION MIXER
-  // =========================================================
+  // ==========================================================
+  // WORLD COMPOSITION
+  // ==========================================================
 
-  /*
-   * Sceneが最初に表示された時点の
-   * Compositionを初期値にする。
-   *
-   * これで最初に0からフェードインする
-   * 不自然さを防ぐ。
-   */
   const compositionRef =
     useRef<WorldComposition>(
       getWorldComposition(
@@ -601,7 +1084,9 @@ function Scene(
 
 
   const compositionTimerRef =
-    useRef(0);
+    useRef(
+      0
+    );
 
 
   useFrame(
@@ -609,10 +1094,7 @@ function Scene(
       _state,
       delta
     ) => {
-      /*
-       * 現在のDNAから
-       * 目標Compositionを作る
-       */
+
       const targetComposition =
         getWorldComposition(
           props
@@ -620,22 +1102,17 @@ function Scene(
 
 
       /*
-       * Compositionの変化速度
+       * DNAより少し遅くすることで
        *
-       * 0.8
-       * → かなりゆっくり
+       * DNAが変化
+       * ↓
+       * 世界が後から追いつく
        *
-       * 1.4
-       * → 幻想的
-       *
-       * 2.5
-       * → 普通
-       *
-       * 4以上
-       * → 素早い
+       * という有機的な変化にする。
        */
+
       const compositionSpeed =
-        1.4;
+        1.05;
 
 
       const nextComposition =
@@ -651,9 +1128,6 @@ function Scene(
         nextComposition;
 
 
-      /*
-       * React描画は約30fps
-       */
       compositionTimerRef.current +=
         delta;
 
@@ -677,66 +1151,161 @@ function Scene(
   );
 
 
-  // =========================================================
-  // LIGHT COLOR
-  // =========================================================
-
-  const coldLight =
-    new THREE.Color(
-      "#718bff"
-    );
-
-  const warmLight =
-    new THREE.Color(
-      "#ffc090"
-    );
-
+  // ==========================================================
+  // LIGHTING PALETTE
+  // ==========================================================
 
   const mainLight =
-    coldLight
-      .clone()
-      .lerp(
-        warmLight,
-        warmth
-      );
+    useMemo(
+      () => {
+
+        const cold =
+          new THREE.Color(
+            "#627bff"
+          );
 
 
-  // =========================================================
-  // FOG
-  // =========================================================
+        const warm =
+          new THREE.Color(
+            "#ffb982"
+          );
 
-  const fogColor =
-    new THREE.Color(
-      0.003 +
-        (
-          1 -
-          darkness
-        ) *
-          0.006,
 
-      0.003 +
-        (
-          1 -
-          darkness
-        ) *
-          0.007,
+        const fantasyColor =
+          new THREE.Color(
+            "#8a62ff"
+          );
 
-      0.008 +
-        (
-          1 -
-          darkness
-        ) *
-          0.012
+
+        const color =
+          cold
+            .clone()
+            .lerp(
+              warm,
+              warmth
+            );
+
+
+        color.lerp(
+          fantasyColor,
+          fantasy *
+            0.16
+        );
+
+
+        return color;
+      },
+      [
+        warmth,
+        fantasy,
+      ]
     );
 
 
-  // =========================================================
+  // ==========================================================
+  // FOG
+  // ==========================================================
+
+  const fogColor =
+    useMemo(
+      () => {
+
+        const base =
+          new THREE.Color(
+            0.0015,
+            0.002,
+            0.006
+          );
+
+
+        const light =
+          new THREE.Color(
+            0.010,
+            0.014,
+            0.028
+          );
+
+
+        return base
+          .clone()
+          .lerp(
+            light,
+            (
+              1 -
+              darkness
+            ) *
+            0.55 +
+            fantasy *
+              0.08
+          );
+      },
+      [
+        darkness,
+        fantasy,
+      ]
+    );
+
+
+  const fogNear =
+    10 +
+    spaciousness *
+      3;
+
+
+  const fogFar =
+    30 +
+    spaciousness *
+      16;
+
+
+  // ==========================================================
+  // GLOBAL COMPOSITION ENERGY
+  // ==========================================================
+
+  const worldEnergy =
+    Object.values(
+      composition
+    ).reduce(
+      (
+        sum,
+        value
+      ) =>
+        sum +
+        value,
+      0
+    );
+
+
+  /*
+   * worldEnergyが高いほど
+   * ambientをむしろ少し抑える。
+   *
+   * 全部光って白くなるのを防ぐ。
+   */
+
+  const ambientIntensity =
+    Math.max(
+      0.035,
+      0.11 +
+      (
+        1 -
+        darkness
+      ) *
+        0.10 -
+      worldEnergy *
+        0.018
+    );
+
+
+  // ==========================================================
   // RENDER
-  // =========================================================
+  // ==========================================================
 
   return (
     <>
-      {/* BACKGROUND */}
+      {/* ===================================================== */}
+      {/* BACKGROUND                                            */}
+      {/* ===================================================== */}
 
       <color
         attach="background"
@@ -746,166 +1315,159 @@ function Scene(
       />
 
 
-      {/* FOG */}
+      {/* ===================================================== */}
+      {/* FOG                                                   */}
+      {/* ===================================================== */}
 
       <fog
         attach="fog"
         args={[
           fogColor,
-          12,
-          38,
+          fogNear,
+          fogFar,
         ]}
       />
 
 
-      {/* LIGHTS */}
+      {/* ===================================================== */}
+      {/* LIGHTING                                              */}
+      {/* ===================================================== */}
 
       <ambientLight
         intensity={
-          0.08 +
-          (
-            1 -
-            darkness
-          ) *
-            0.18
+          ambientIntensity
         }
       />
 
 
       <pointLight
         position={[
-          0,
-          1,
-          4,
+          2.5,
+          3.5,
+          5,
         ]}
         color={
           mainLight
         }
         intensity={
-          4 +
+          1.8 +
           hope *
-            7
+            3.2
         }
         distance={
-          30
+          26 +
+          spaciousness *
+            8
         }
-        decay={
-          2
-        }
+        decay={2}
       />
 
 
       <pointLight
         position={[
-          -5,
-          3,
           -6,
+          2.5,
+          -5,
         ]}
-        color="#526dff"
+        color="#455dcb"
         intensity={
-          1.5 +
-          hope *
-            2
+          0.45 +
+          fantasy *
+            1.15
         }
-        distance={
-          25
-        }
-        decay={
-          2
-        }
+        distance={25}
+        decay={2}
       />
 
 
-      {/* ================================================== */}
-      {/* WORLDS */}
-      {/* ================================================== */}
+      {/* ===================================================== */}
+      {/* GLOBAL WORLD STAGE                                    */}
+      {/* ===================================================== */}
 
-      <GalaxyWorld
+      <WorldStage
         {...props}
-        mix={
-          composition.galaxy
-        }
-      />
+      >
+
+        <GalaxyWorld
+          {...props}
+          mix={
+            composition.galaxy
+          }
+        />
 
 
-      <CloudWorld
-        {...props}
-        mix={
-          composition.cloud
-        }
-      />
+        <CloudWorld
+          {...props}
+          mix={
+            composition.cloud
+          }
+        />
 
 
-      <WaveWorld
-        {...props}
-        mix={
-          composition.wave
-        }
-      />
+        <WaveWorld
+          {...props}
+          mix={
+            composition.wave
+          }
+        />
 
 
-      <OrganismWorld
-        {...props}
-        mix={
-          composition.organism
-        }
-      />
+        <OrganismWorld
+          {...props}
+          mix={
+            composition.organism
+          }
+        />
 
 
-      <CrystalWorld
-        {...props}
-        mix={
-          composition.crystal
-        }
-      />
+        <CrystalWorld
+          {...props}
+          mix={
+            composition.crystal
+          }
+        />
 
 
-      <RainWorld
-        {...props}
-        mix={
-          composition.rain
-        }
-      />
+        <RainWorld
+          {...props}
+          mix={
+            composition.rain
+          }
+        />
 
 
-      <VoidWorld
-        {...props}
-        mix={
-          composition.void
-        }
-      />
+        <VoidWorld
+          {...props}
+          mix={
+            composition.void
+          }
+        />
 
 
-      {/* CENTER LIGHT */}
+        <CenterLight
+          {...props}
+        />
 
-      <CenterLight
-        {...props}
-      />
+      </WorldStage>
 
 
-      {/* CAMERA */}
+      {/* ===================================================== */}
+      {/* CAMERA                                                */}
+      {/* ===================================================== */}
 
       <CameraMotion
         {...props}
       />
 
 
-      {/* POST PROCESS */}
+      {/* ===================================================== */}
+      {/* POST PROCESS                                          */}
+      {/* ===================================================== */}
 
-      <EffectComposer>
-        <Bloom
-          intensity={
-            0.15
-          }
-          luminanceThreshold={
-            0.9
-          }
-          luminanceSmoothing={
-            0.15
-          }
-          mipmapBlur
-        />
-      </EffectComposer>
+      <PostProcessing
+        {...props}
+      />
+
     </>
   );
 }
@@ -918,6 +1480,7 @@ function Scene(
 export default function World3D(
   props: World3DProps
 ) {
+
   return (
     <div
       style={{
@@ -946,22 +1509,23 @@ export default function World3D(
           "hidden",
       }}
     >
+
       <Canvas
         camera={{
           position: [
             0,
-            1.2,
-            12,
+            0.75,
+            11.5,
           ],
 
           fov:
-            55,
+            54,
 
           near:
             0.1,
 
           far:
-            100,
+            120,
         }}
 
         dpr={[
@@ -983,26 +1547,40 @@ export default function World3D(
         onCreated={({
           gl,
         }) => {
+
           gl.setClearColor(
             "#000000"
           );
 
+
           gl.outputColorSpace =
             THREE.SRGBColorSpace;
+
 
           gl.toneMapping =
             THREE.ACESFilmicToneMapping;
 
+
+          /*
+           * 前より少し暗め。
+           *
+           * 光っている部分と
+           * 空白の差を出す。
+           */
+
           gl.toneMappingExposure =
-            0.75;
+            0.68;
         }}
       >
+
         <SmoothWorld
           targetDNA={
             props
           }
         />
+
       </Canvas>
+
     </div>
   );
 }
